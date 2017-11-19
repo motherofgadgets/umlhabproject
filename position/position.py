@@ -50,6 +50,7 @@ def get_fix():
             time.sleep(1)
         else:
             fix = gpsd.fix
+            fix.time = gpsd.utc
             break
     print('**********FIX***************')
     print('Time: {}'.format(fix.time))
@@ -73,7 +74,7 @@ def format_string(fix, comment):
     # Latitude
     latitude = fix.latitude
     lat_str = str(latitude)
-    latitude_degrees = float(lat_str[0:2])
+    latitude_degrees = int(lat_str[0:2])
     latitude_minutes = round(float(lat_str[2:]) * 60, 2)  # convert from decimal to minutes
     latmin_str = str(latitude_minutes).zfill(5)
     lat_str = str(latitude_degrees) + latmin_str
