@@ -24,6 +24,8 @@ GPS_SLEEPTIME = Config.getfloat('TimingIntervals', 'Position')
 CALLSIGN = "KC1HZL-7"
 COMMENT = "Testing RaspPi + UV-5R"
 SOUNDFILE = "packet.wav"
+FILENAME = time.strftime('%Y-%m-%d_%H%M%S')
+LOG_FREQUENCY = 1
 
 
 class Position(threading.Thread):
@@ -52,14 +54,14 @@ def get_fix():
             fix = gpsd.fix
             fix.time = gpsd.utc
             break
-    print('**********FIX***************')
-    print('Time: {}'.format(fix.time))
-    print('Latitude: {}'.format(fix.latitude))
-    print('Longitude: {}'.format(fix.longitude))
-    print('Course: {}'.format(fix.track))
-    print('Speed: {}'.format(fix.speed))
-    print('Altitude: {}'.format(fix.altitude))
-    print('****************************')
+    # print('**********FIX***************')
+    # print('Time: {}'.format(fix.time))
+    # print('Latitude: {}'.format(fix.latitude))
+    # print('Longitude: {}'.format(fix.longitude))
+    # print('Course: {}'.format(fix.track))
+    # print('Speed: {}'.format(fix.speed))
+    # print('Altitude: {}'.format(fix.altitude))
+    # print('****************************')
     return fix
 
 
@@ -105,10 +107,10 @@ def format_string(fix, comment):
 
     aprs_string = '/{}z{}N/{}W>{}/{}{}/A={}'.format(time_str, lat_str, lon_str, course_str, speed_str,
                                                     comment, alt_str)
-
-    print('TimeDay: {}'.format(time_day))
-    print('TimeHour: {}'.format(time_hour))
-    print('TimeMinute: {}'.format(time_minute))
+    #
+    # print('TimeDay: {}'.format(time_day))
+    # print('TimeHour: {}'.format(time_hour))
+    # print('TimeMinute: {}'.format(time_minute))
 
     print('Time: {}'.format(time_str))
     print('Latitude: {}'.format(lat_str))
@@ -127,14 +129,50 @@ def transmit(transmit_string):
     call(['aplay', SOUNDFILE])  # broadcasts packet.wav
 
 
+def log_data(log_fix):
+    if isinstance(log_fix.time, float):
+        log_time = time.strftime('%Y-%m-%dT%H:%M:%S.%000Z', time.gmtime(log_fix.time))
+        print('fixing time')
+    else:
+        log_time = log_fix.time
+    print('Logging time: '.format(log_time))
+    pos_data = [log_time, log_fix.latitude, log_fix.longitude, log_fix.track, log_fix.speed, log_fix.altitude]
+    output_string = ",".join(str(value) for value in pos_data)
+    batch_data.append(output_string)
+
+
+def file_setup(filename):
+    header = ["timestamp", "Latitude", "Longitude", "Course", "Speed", "Altitude"]
+
+    with open(filename, "w") as f:
+        f.write(",".join(str(value) for value in header) + "\n")
+
+
 if __name__ == '__main__':
+    batch_data = []
+
+    if FILENAME == "":
+        filename = "logs/testLog.csv"
+    else:
+        filename = 'logs/{}.csv'.format(FILENAME)
+
+    file_setup(filename)
     position = Position()
     try:
         position.start()
         while True:
             new_fix = get_fix()
+            log_data(new_fix)
             new_string = format_string(new_fix, COMMENT)
             transmit(new_string)
+
+
+            if len(batch_data) >= LOG_FREQUENCY:
+                print("Writing to file..")
+                with open(filename, "a") as f:
+                    for line in batch_data:
+                        f.write(line + "\n")
+                    batch_data = []
             time.sleep(5)
 
     except (KeyboardInterrupt, SystemExit):  # when you press ctrl+c
