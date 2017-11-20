@@ -53,7 +53,7 @@ def file_setup(filename):
 
 
 # Getting and storing Data
-FILENAME = "testLog"
+FILENAME = time.strftime('%Y-%m-%d_%H%M%S')
 WRITE_FREQUENCY = 5
 
 sense = SenseHat()
@@ -62,9 +62,9 @@ sense.clear()
 batch_data = []
 
 if FILENAME == "":
-    filename = "testLog.csv"
+    filename = "logs/testLog.csv"
 else:
-    filename = FILENAME + ".csv"
+    filename = 'logs/{}.csv'.format(FILENAME)
 
 file_setup(filename)
 
