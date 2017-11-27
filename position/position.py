@@ -13,6 +13,7 @@ import ConfigParser
 from gps import *
 from subprocess import call
 import threading
+import Queue
 
 # TODO: Move this global variable outside this file?
 gpsd = None
@@ -67,10 +68,13 @@ def get_fix():
     # print('Speed: {}'.format(fix.speed))
     # print('Altitude: {}'.format(fix.altitude))
     # print('****************************')
-    return fix
+    log_queue.put(fix)
+    aprs_queue.put(fix)
 
 
-def format_string(fix, comment):
+def format_string(comment):
+    fix = aprs_queue.get()
+
     # Time
     new_time = str(fix["time"])
     time_day = new_time[8:10]
@@ -124,6 +128,8 @@ def format_string(fix, comment):
     print('Speed: {}'.format(speed_str))
     print('Altitude: {}'.format(alt_str))
 
+    aprs_queue.task_done()
+
     return aprs_string
 
 
@@ -134,7 +140,8 @@ def transmit(transmit_string):
     call(['aplay', SOUNDFILE])  # broadcasts packet.wav
 
 
-def log_data(log_fix):
+def log_data():
+    log_fix = log_queue.get()
     if isinstance(log_fix["time"], float):
         log_time = time.strftime('%Y-%m-%dT%H:%M:%S.%000Z', time.gmtime(log_fix["time"]))
         print('fixing time')
@@ -149,6 +156,7 @@ def log_data(log_fix):
                 log_fix["altitude"]]
     output_string = ",".join(str(value) for value in pos_data)
     batch_data.append(output_string)
+    log_queue.task_done()
 
 
 def file_setup(filename):
@@ -168,12 +176,14 @@ if __name__ == '__main__':
 
     file_setup(filename)
     position = Position()
+    aprs_queue = Queue.Queue()
+    log_queue = Queue.Queue()
     try:
         position.start()
         while True:
-            new_fix = get_fix()
-            log_data(new_fix)
-            new_string = format_string(new_fix, COMMENT)
+            get_fix()
+            log_data()
+            new_string = format_string(COMMENT)
             transmit(new_string)
 
             if len(batch_data) >= LOG_FREQUENCY:
@@ -186,6 +196,8 @@ if __name__ == '__main__':
 
     except (KeyboardInterrupt, SystemExit):  # when you press ctrl+c
         print "\nKilling Thread..."
+        log_queue.join()
+        aprs_queue.join()
         position.running = False
         position.join()  # wait for the thread to finish what it's doing
     print "Done.\nExiting."
