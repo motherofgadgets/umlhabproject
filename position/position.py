@@ -51,8 +51,13 @@ def get_fix():
             print('No GPS data available.')
             time.sleep(1)
         else:
-            fix = gpsd.fix
-            fix.time = gpsd.utc
+            fix = {"time": gpsd.utc,
+                   "latitude": gpsd.fix.latitude,
+                   "longitude": gpsd.fix.longitude,
+                   "course": gpsd.fix.track,
+                   "speed": gpsd.fix.speed,
+                   "altitude": gpsd.fix.altitude,
+                   }
             break
     # print('**********FIX***************')
     # print('Time: {}'.format(fix.time))
@@ -67,14 +72,14 @@ def get_fix():
 
 def format_string(fix, comment):
     # Time
-    new_time = str(fix.time)
+    new_time = str(fix["time"])
     time_day = new_time[8:10]
     time_hour = new_time[11:13]
     time_minute = new_time[14:16]
     time_str = "{}{}{}".format(time_day, time_hour, time_minute)
 
     # Latitude
-    latitude = fix.latitude
+    latitude = fix["latitude"]
     lat_str = str(latitude)
     latitude_degrees = int(lat_str[0:2])
     latitude_minutes = round(float(lat_str[2:]) * 60, 2)  # convert from decimal to minutes
@@ -82,7 +87,7 @@ def format_string(fix, comment):
     lat_str = str(latitude_degrees) + latmin_str
 
     # Longitude
-    longitude = fix.longitude
+    longitude = fix["longitude"]
     lon_str = str(longitude)
     lonbits = lon_str.split('.')
     longitude_degrees = abs(int(lonbits[0]))
@@ -94,15 +99,15 @@ def format_string(fix, comment):
     lon_str = londay_str + lonmin_str
 
     # Course
-    course = round(fix.track)
+    course = round(fix["course"])
     course_str = str(course).zfill(3)
 
     # Speed
-    speed = round(fix.speed * 1.9438444924574)
+    speed = round(fix["speed"] * 1.9438444924574)
     speed_str = str(speed).zfill(3)
 
     # Altitude
-    altitude = round(fix.altitude * 3.2808)  # read altitude, convert to meters
+    altitude = round(fix["altitude"] * 3.2808)  # read altitude, convert to meters
     alt_str = str(int(altitude)).zfill(6)
 
     aprs_string = '/{}z{}N/{}W>{}/{}{}/A={}'.format(time_str, lat_str, lon_str, course_str, speed_str,
@@ -130,13 +135,18 @@ def transmit(transmit_string):
 
 
 def log_data(log_fix):
-    if isinstance(log_fix.time, float):
-        log_time = time.strftime('%Y-%m-%dT%H:%M:%S.%000Z', time.gmtime(log_fix.time))
+    if isinstance(log_fix["time"], float):
+        log_time = time.strftime('%Y-%m-%dT%H:%M:%S.%000Z', time.gmtime(log_fix["time"]))
         print('fixing time')
     else:
-        log_time = log_fix.time
+        log_time = log_fix["time"]
     print('Logging time: '.format(log_time))
-    pos_data = [log_time, log_fix.latitude, log_fix.longitude, log_fix.track, log_fix.speed, log_fix.altitude]
+    pos_data = [log_time,
+                log_fix["latitude"],
+                log_fix["longitude"],
+                log_fix["course"],
+                log_fix["speed"],
+                log_fix["altitude"]]
     output_string = ",".join(str(value) for value in pos_data)
     batch_data.append(output_string)
 
@@ -165,7 +175,6 @@ if __name__ == '__main__':
             log_data(new_fix)
             new_string = format_string(new_fix, COMMENT)
             transmit(new_string)
-
 
             if len(batch_data) >= LOG_FREQUENCY:
                 print("Writing to file..")
