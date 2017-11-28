@@ -26,7 +26,7 @@ CALLSIGN = "KC1HZL-7"
 COMMENT = "Testing RaspPi + UV-5R"
 SOUNDFILE = "packet.wav"
 FILENAME = time.strftime('%Y-%m-%d_%H%M%S')
-LOG_FREQUENCY = 1
+LOG_FREQUENCY = 5
 
 
 class Position(threading.Thread):
@@ -45,118 +45,156 @@ class Position(threading.Thread):
             gpsd.next()
 
 
-def get_fix():
-    global gpsd
-    while True:
-        if isnan(gpsd.fix.time):
-            print('No GPS data available.')
-            time.sleep(1)
+class PositionHelper(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.running = True
+
+    def run(self):
+        global gpsd
+        while pos_helper.running:
+            self.get_fix()
+            time.sleep(GPS_SLEEPTIME)
+
+    def get_fix(self):
+        global gpsd
+        while True:
+            if isnan(gpsd.fix.time) or gpsd.fix.latitude == 0:
+                print('No GPS data available.')
+                time.sleep(1)
+            else:
+                fix = {"time": gpsd.utc,
+                       "latitude": gpsd.fix.latitude,
+                       "longitude": gpsd.fix.longitude,
+                       "course": gpsd.fix.track,
+                       "speed": gpsd.fix.speed,
+                       "altitude": gpsd.fix.altitude,
+                       }
+                print('**********FIX***************')
+                print('Time: {}'.format(fix["time"]))
+                print('Latitude: {}'.format(fix["latitude"]))
+                print('Longitude: {}'.format(fix["longitude"]))
+                print('Course: {}'.format(fix["course"]))
+                print('Speed: {}'.format(fix["speed"]))
+                print('Altitude: {}'.format(fix["altitude"]))
+                print('****************************')
+                log_queue.put(fix)
+                aprs_queue.put(fix)
+                break
+
+
+class Aprs(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.running = True
+
+    def run(self):
+        while self.running:
+            self.format_string(COMMENT)
+
+    def format_string(self, comment):
+        fix = aprs_queue.get()
+
+        if fix:
+            # Time
+            new_time = str(fix["time"])
+            time_day = new_time[8:10]
+            time_hour = new_time[11:13]
+            time_minute = new_time[14:16]
+            time_str = "{}{}{}".format(time_day, time_hour, time_minute)
+
+            # Latitude
+            latitude = fix["latitude"]
+            lat_str = str(latitude)
+            latitude_degrees = int(lat_str[0:2])
+            latitude_minutes = round(float(lat_str[2:]) * 60, 2)  # convert from decimal to minutes
+            latmin_str = str(latitude_minutes).zfill(5)
+            lat_str = str(latitude_degrees) + latmin_str
+
+            # Longitude
+            longitude = fix["longitude"]
+            lon_str = str(longitude)
+            lonbits = lon_str.split('.')
+            longitude_degrees = abs(int(lonbits[0]))
+            lonmin = '.' + lonbits[1]
+            longitude_minutes = round(float(lonmin) * 60, 2)  # convert from decimal to minutes
+            londay_str = str(int(longitude_degrees)).zfill(3)
+            lonmin = "{0:.2f}".format(longitude_minutes)
+            lonmin_str = str(lonmin).zfill(5)
+            lon_str = londay_str + lonmin_str
+
+            # Course
+            course = round(fix["course"])
+            course_str = str(course).zfill(3)
+
+            # Speed
+            speed = round(fix["speed"] * 1.9438444924574)
+            speed_str = str(speed).zfill(3)
+
+            # Altitude
+            altitude = round(fix["altitude"] * 3.2808)  # read altitude, convert to meters
+            alt_str = str(int(altitude)).zfill(6)
+
+            aprs_string = '/{}z{}N/{}W>{}/{}{}/A={}'.format(time_str, lat_str, lon_str, course_str, speed_str,
+                                                            comment, alt_str)
+            #
+            # print('TimeDay: {}'.format(time_day))
+            # print('TimeHour: {}'.format(time_hour))
+            # print('TimeMinute: {}'.format(time_minute))
+
+            print('Time: {}'.format(time_str))
+            print('Latitude: {}'.format(lat_str))
+            print('Longitude: {}'.format(lon_str))
+            print('Course: {}'.format(course_str))
+            print('Speed: {}'.format(speed_str))
+            print('Altitude: {}'.format(alt_str))
+
+            aprs_queue.task_done()
+
+            self.transmit(aprs_string)
         else:
-            fix = {"time": gpsd.utc,
-                   "latitude": gpsd.fix.latitude,
-                   "longitude": gpsd.fix.longitude,
-                   "course": gpsd.fix.track,
-                   "speed": gpsd.fix.speed,
-                   "altitude": gpsd.fix.altitude,
-                   }
-            break
-    # print('**********FIX***************')
-    # print('Time: {}'.format(fix.time))
-    # print('Latitude: {}'.format(fix.latitude))
-    # print('Longitude: {}'.format(fix.longitude))
-    # print('Course: {}'.format(fix.track))
-    # print('Speed: {}'.format(fix.speed))
-    # print('Altitude: {}'.format(fix.altitude))
-    # print('****************************')
-    log_queue.put(fix)
-    aprs_queue.put(fix)
+            self.running = False
+            print('APRS running = False')
+            aprs_queue.task_done()
 
 
-def format_string(comment):
-    fix = aprs_queue.get()
-
-    # Time
-    new_time = str(fix["time"])
-    time_day = new_time[8:10]
-    time_hour = new_time[11:13]
-    time_minute = new_time[14:16]
-    time_str = "{}{}{}".format(time_day, time_hour, time_minute)
-
-    # Latitude
-    latitude = fix["latitude"]
-    lat_str = str(latitude)
-    latitude_degrees = int(lat_str[0:2])
-    latitude_minutes = round(float(lat_str[2:]) * 60, 2)  # convert from decimal to minutes
-    latmin_str = str(latitude_minutes).zfill(5)
-    lat_str = str(latitude_degrees) + latmin_str
-
-    # Longitude
-    longitude = fix["longitude"]
-    lon_str = str(longitude)
-    lonbits = lon_str.split('.')
-    longitude_degrees = abs(int(lonbits[0]))
-    lonmin = '.' + lonbits[1]
-    longitude_minutes = round(float(lonmin) * 60, 2)  # convert from decimal to minutes
-    londay_str = str(int(longitude_degrees)).zfill(3)
-    lonmin = "{0:.2f}".format(longitude_minutes)
-    lonmin_str = str(lonmin).zfill(5)
-    lon_str = londay_str + lonmin_str
-
-    # Course
-    course = round(fix["course"])
-    course_str = str(course).zfill(3)
-
-    # Speed
-    speed = round(fix["speed"] * 1.9438444924574)
-    speed_str = str(speed).zfill(3)
-
-    # Altitude
-    altitude = round(fix["altitude"] * 3.2808)  # read altitude, convert to meters
-    alt_str = str(int(altitude)).zfill(6)
-
-    aprs_string = '/{}z{}N/{}W>{}/{}{}/A={}'.format(time_str, lat_str, lon_str, course_str, speed_str,
-                                                    comment, alt_str)
-    #
-    # print('TimeDay: {}'.format(time_day))
-    # print('TimeHour: {}'.format(time_hour))
-    # print('TimeMinute: {}'.format(time_minute))
-
-    print('Time: {}'.format(time_str))
-    print('Latitude: {}'.format(lat_str))
-    print('Longitude: {}'.format(lon_str))
-    print('Course: {}'.format(course_str))
-    print('Speed: {}'.format(speed_str))
-    print('Altitude: {}'.format(alt_str))
-
-    aprs_queue.task_done()
-
-    return aprs_string
+    def transmit(self, transmit_string):
+        print('Transmitting beacon.')
+        print(transmit_string)
+        call(['aprs', '-c', CALLSIGN, '-o', SOUNDFILE, transmit_string])  # creates packet.wav
+        call(['aplay', SOUNDFILE])  # broadcasts packet.wav
 
 
-def transmit(transmit_string):
-    print('Transmitting beacon.')
-    print(transmit_string)
-    call(['aprs', '-c', CALLSIGN, '-o', SOUNDFILE, transmit_string])  # creates packet.wav
-    call(['aplay', SOUNDFILE])  # broadcasts packet.wav
+class PosLogger(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.running = True
 
+    def run(self):
+        while self.running:
+            self.log_data()
 
-def log_data():
-    log_fix = log_queue.get()
-    if isinstance(log_fix["time"], float):
-        log_time = time.strftime('%Y-%m-%dT%H:%M:%S.%000Z', time.gmtime(log_fix["time"]))
-        print('fixing time')
-    else:
-        log_time = log_fix["time"]
-    print('Logging time: '.format(log_time))
-    pos_data = [log_time,
-                log_fix["latitude"],
-                log_fix["longitude"],
-                log_fix["course"],
-                log_fix["speed"],
-                log_fix["altitude"]]
-    output_string = ",".join(str(value) for value in pos_data)
-    batch_data.append(output_string)
-    log_queue.task_done()
+    def log_data(self):
+        log_fix = log_queue.get()
+        if log_fix:
+            if isinstance(log_fix["time"], float):
+                log_time = time.strftime('%Y-%m-%dT%H:%M:%S.%000Z', time.gmtime(log_fix["time"]))
+                print('fixing time')
+            else:
+                log_time = log_fix["time"]
+            print('Logging time: {}'.format(log_time))
+            pos_data = [log_time,
+                        log_fix["latitude"],
+                        log_fix["longitude"],
+                        log_fix["course"],
+                        log_fix["speed"],
+                        log_fix["altitude"]]
+            output_string = ",".join(str(value) for value in pos_data)
+            batch_data.append(output_string)
+            log_queue.task_done()
+        else:
+            self.running = False
+            log_queue.task_done()
 
 
 def file_setup(filename):
@@ -176,28 +214,34 @@ if __name__ == '__main__':
 
     file_setup(filename)
     position = Position()
+    pos_helper = PositionHelper()
+    logger = PosLogger()
+    aprs = Aprs()
     aprs_queue = Queue.Queue()
     log_queue = Queue.Queue()
     try:
         position.start()
+        pos_helper.start()
+        logger.start()
+        aprs.start()
         while True:
-            get_fix()
-            log_data()
-            new_string = format_string(COMMENT)
-            transmit(new_string)
-
             if len(batch_data) >= LOG_FREQUENCY:
                 print("Writing to file..")
                 with open(filename, "a") as f:
                     for line in batch_data:
                         f.write(line + "\n")
                     batch_data = []
-            time.sleep(5)
-
     except (KeyboardInterrupt, SystemExit):  # when you press ctrl+c
-        print "\nKilling Thread..."
-        log_queue.join()
-        aprs_queue.join()
+        pos_helper.running = False
         position.running = False
-        position.join()  # wait for the thread to finish what it's doing
+        pos_helper.join()
+        print "\nKilling Position Helper Thread..."
+        position.join()
+        log_queue.put(None)
+        aprs_queue.put(None)
+        logger.join()
+        print "\nKilling Log Thread..."
+        aprs.join()
+        print "\nKilling APRS Thread..."
+
     print "Done.\nExiting."
