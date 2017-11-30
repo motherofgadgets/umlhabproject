@@ -53,7 +53,9 @@ class PositionHelper(threading.Thread):
     def get_fix(self):
         global gpsd
         while True:
-            if isnan(gpsd.fix.time) or gpsd.fix.latitude == 0:
+            if isnan(gpsd.fix.time) \
+                    or isnan(gpsd.fix.latitude) \
+                    or gpsd.fix.latitude == 0:
                 print('No GPS data available.')
                 time.sleep(1)
             else:
