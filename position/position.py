@@ -14,19 +14,24 @@ from gps import *
 from subprocess import call
 import threading
 import Queue
+import serial
 
-# TODO: Move this global variable outside this file?
 gpsd = None
 Config = ConfigParser.ConfigParser()
 Config.read("../config.ini")
 GPS_SLEEPTIME = Config.getfloat('TimingIntervals', 'Position')
+MAX_ALTITUDE = Config.getfloat('PositionBoundaries', 'Altitude')
+MAX_LATITUDE = Config.getfloat('PositionBoundaries', 'MaxLatitude')
+MIN_LATITUDE = Config.getfloat('PositionBoundaries', 'MinLatitude')
+MAX_LONGITUDE = Config.getfloat('PositionBoundaries', 'MaxLongitude')
+MIN_LONGITUDE = Config.getfloat('PositionBoundaries', 'MinLongitude')
 
 # Global variables for this module only
 CALLSIGN = "KC1HZL-7"
 COMMENT = "Testing RaspPi + UV-5R"
 SOUNDFILE = "packet.wav"
 FILENAME = time.strftime('%Y-%m-%d_%H%M%S')
-LOG_FREQUENCY = 5
+LOG_FREQUENCY = Config.get('TimingIntervals', 'PositionLogging')
 
 
 class Position(threading.Thread):
@@ -80,6 +85,7 @@ class PositionHelper(threading.Thread):
                 print('****************************')
                 log_queue.put(fix)
                 aprs_queue.put(fix)
+                cutter_queue.put(fix)
                 break
 
 
@@ -142,12 +148,12 @@ class Aprs(threading.Thread):
             # print('TimeHour: {}'.format(time_hour))
             # print('TimeMinute: {}'.format(time_minute))
 
-            print('Time: {}'.format(time_str))
-            print('Latitude: {}'.format(lat_str))
-            print('Longitude: {}'.format(lon_str))
-            print('Course: {}'.format(course_str))
-            print('Speed: {}'.format(speed_str))
-            print('Altitude: {}'.format(alt_str))
+            # print('Time: {}'.format(time_str))
+            # print('Latitude: {}'.format(lat_str))
+            # print('Longitude: {}'.format(lon_str))
+            # print('Course: {}'.format(course_str))
+            # print('Speed: {}'.format(speed_str))
+            # print('Altitude: {}'.format(alt_str))
 
             aprs_queue.task_done()
 
@@ -156,7 +162,6 @@ class Aprs(threading.Thread):
             self.running = False
             print('APRS running = False')
             aprs_queue.task_done()
-
 
     def transmit(self, transmit_string):
         print('Transmitting beacon.')
@@ -197,6 +202,61 @@ class PosLogger(threading.Thread):
             log_queue.task_done()
 
 
+class Cutter(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.running = True
+        self.ser = serial.Serial('/dev/ttyUSB0', 9600)
+
+    def run(self):
+        while self.running:
+            self.checkPosition()
+
+    def checkPosition(self):
+        out_of_bounds = False
+        fix = cutter_queue.get()
+        if fix:
+            altitude = fix["altitude"]
+            latitude = fix["latitude"]
+            longitude = abs(fix["longitude"])
+            # print 'CUTTER: Max Altitude is {}'.format(MAX_ALTITUDE)
+            # print 'CUTTER: Altitude = {}, type {}'.format(altitude, type(altitude))
+            # print 'CUTTER: Max Latitude is {}, Min Latitude is {}'.format(MAX_LATITUDE, MIN_LATITUDE)
+            # print 'CUTTER: Longitude = {}, type {}'.format(latitude, type(latitude))
+            # print 'CUTTER: Max Longitude is {}, Min Longitude is {}'.format(MAX_LONGITUDE, MIN_LONGITUDE)
+            # print 'CUTTER: Longitude = {}, type {}'.format(longitude, type(longitude))
+
+            if altitude < MAX_ALTITUDE:
+                if MIN_LATITUDE <= latitude <= MAX_LATITUDE:
+                    if MIN_LONGITUDE <= longitude <= MAX_LONGITUDE:
+                        pass
+                    else:
+                        print 'LONGITUDE OUT OF BOUNDS'
+                        out_of_bounds = True
+                else:
+                    print 'LATITUDE OUT OF BOUNDS'
+                    out_of_bounds = True
+            else:
+                print 'ALTITUDE OUT OF BOUNDS'
+                out_of_bounds = True
+
+            if out_of_bounds:
+                print 'Out of bounds. Cutting balloon.'
+                self.cut()
+            else:
+                print 'In bounds.'
+
+            cutter_queue.task_done()
+        else:
+            self.running = False
+            cutter_queue.task_done()
+
+    def cut(self):
+        print 'Cutting!!!'
+        command = '1'
+        self.ser.write(command.encode('hex'))
+
+
 def file_setup(filename):
     header = ["timestamp", "Latitude", "Longitude", "Course", "Speed", "Altitude"]
 
@@ -217,13 +277,17 @@ if __name__ == '__main__':
     pos_helper = PositionHelper()
     logger = PosLogger()
     aprs = Aprs()
+    cutter = Cutter()
+
     aprs_queue = Queue.Queue()
     log_queue = Queue.Queue()
+    cutter_queue = Queue.Queue()
     try:
         position.start()
         pos_helper.start()
         logger.start()
         aprs.start()
+        cutter.start()
         while True:
             if len(batch_data) >= LOG_FREQUENCY:
                 print("Writing to file..")
@@ -237,11 +301,15 @@ if __name__ == '__main__':
         pos_helper.join()
         print "\nKilling Position Helper Thread..."
         position.join()
+        print "\nKilling Position Thread..."
         log_queue.put(None)
         aprs_queue.put(None)
+        cutter_queue.put(None)
         logger.join()
         print "\nKilling Log Thread..."
         aprs.join()
         print "\nKilling APRS Thread..."
+        cutter.join()
+        print "\nKilling Cutter Thread..."
 
     print "Done.\nExiting."
