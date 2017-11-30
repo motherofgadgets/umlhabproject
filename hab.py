@@ -23,7 +23,7 @@ if __name__ == '__main__':
         logger.start()
         aprs.start()
         cutter.start()
-        while pos.running:
+        while True:
             pass
 
     except (KeyboardInterrupt, SystemExit):  # when you press ctrl+c

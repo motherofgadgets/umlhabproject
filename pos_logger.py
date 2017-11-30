@@ -1,9 +1,11 @@
 import ConfigParser
 from gps import *
 import threading
+import os
 
 Config = ConfigParser.ConfigParser()
 Config.read("./config.ini")
+FILEPATH = 'position_logs/'
 FILENAME = time.strftime('%Y-%m-%d_%H%M%S')
 LOG_FREQUENCY = Config.getfloat('TimingIntervals', 'PositionLogging')
 
@@ -14,10 +16,13 @@ class PosLogger(threading.Thread):
         self.log_queue = log_queue
         self.batch_data = []
 
+        if not os.path.exists(FILEPATH):
+            os.makedirs(FILEPATH)
+
         if FILENAME == "":
-            self.filename = "testLog.csv"
+            self.filename = "{}testLog.csv".format(FILEPATH)
         else:
-            self.filename = '{}.csv'.format(FILENAME)
+            self.filename = '{}{}.csv'.format(FILEPATH, FILENAME)
 
         file_setup(self.filename)
         self.running = True
