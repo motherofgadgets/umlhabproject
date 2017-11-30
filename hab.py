@@ -2,6 +2,7 @@ import position
 import pos_logger
 import aprs
 import cutter
+import sensors
 import Queue
 
 
@@ -16,6 +17,7 @@ if __name__ == '__main__':
     logger = pos_logger.PosLogger(log_queue)
     aprs = aprs.Aprs(aprs_queue)
     cutter = cutter.Cutter(cutter_queue)
+    sensors = sensors.Sensors()
 
     try:
         pos.start()
@@ -23,6 +25,7 @@ if __name__ == '__main__':
         logger.start()
         aprs.start()
         cutter.start()
+        sensors.start()
         while True:
             pass
 
@@ -34,6 +37,9 @@ if __name__ == '__main__':
         pos.running = False
         pos.join()
         print "\nKilling Position Thread..."
+        sensors.running = False
+        sensors.join()
+        print "\nKilling Sensors Thread..."
         pos_helper.running = False
         pos_helper.join()
 
