@@ -54,13 +54,25 @@ class PositionHelper(threading.Thread):
             self.get_fix()
             time.sleep(GPS_SLEEPTIME)
 
+    @staticmethod
+    def verify(gpsd):
+        if isnan(gpsd.fix.time) \
+                or isnan(gpsd.fix.latitude) \
+                or isnan(gpsd.fix.longitude) \
+                or isnan(gpsd.fix.altitude):
+            return False
+        elif gpsd.fix.latitude == 0 \
+                or gpsd.fix.longitude == 0 \
+                or gpsd.fix.longitude == 0:
+            return False
+        else:
+            return True
+
     def get_fix(self):
         global gpsd
         while True:
             # It may take a second or two to get good data
-            if isnan(gpsd.fix.time) \
-                    or isnan(gpsd.fix.latitude) \
-                    or gpsd.fix.latitude == 0:
+            if not self.verify(gpsd):
                 print('No GPS data available.')
                 time.sleep(1)
             else:
@@ -87,3 +99,4 @@ class PositionHelper(threading.Thread):
                 self.aprs_queue.put(fix)
                 self.cutter_queue.put(fix)
                 break
+
