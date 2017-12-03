@@ -1,3 +1,13 @@
+# sensors.py
+#
+# Written by Ruchit Panchal
+# Adapted for HAB by Danae Moss
+#
+# This script runs indefinitely, pulling the sensor data from the Sense Hat
+# It then puts that data in an array with each value separated by commas. That array is then written
+# to a log file.
+#
+
 # importing csv, senseHAT and time packages
 import csv
 import numpy as np
@@ -8,6 +18,7 @@ import threading
 import os
 import ConfigParser
 
+# Obtains user-defined logging frequency parameter through config file
 Config = ConfigParser.ConfigParser()
 Config.read("./config.ini")
 FILEPATH = 'sensor_logs/'
@@ -17,6 +28,7 @@ WRITE_FREQUENCY = Config.getfloat('TimingIntervals', 'SensorLogging')
 
 class Sensors(threading.Thread):
     def __init__(self):
+        # Initiates an instance of itself as a thread, sets to running
         threading.Thread.__init__(self)
 
         self.sense = SenseHat()
@@ -24,9 +36,11 @@ class Sensors(threading.Thread):
 
         self.batch_data = []
 
+        # If the directory does not exist, create it
         if not os.path.exists(FILEPATH):
             os.makedirs(FILEPATH)
 
+        # If no filename specified, use default
         if FILENAME == "":
             self.filename = "{}testLog.csv".format(FILEPATH)
         else:
@@ -35,6 +49,7 @@ class Sensors(threading.Thread):
         self.file_setup(self.filename)
         self.running = True
 
+    # Defines run sequence
     def run(self):
         while self.running:
             time.sleep(1)
@@ -42,12 +57,12 @@ class Sensors(threading.Thread):
             self.log_data(sense_data)
 
             if len(self.batch_data) >= WRITE_FREQUENCY:
-                print("Writing to file..")
+                print("Writing SenseHat Data to file..")
                 with open(self.filename, "a") as f:
                     for line in self.batch_data:
                         f.write(line + "\n")
                     self.batch_data = []
-            print(sense_data)
+            # print(sense_data)
 
     def get_sense_data(self):
         sense_data = []

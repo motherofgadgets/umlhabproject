@@ -1,7 +1,17 @@
+# cutter.py
+#
+# by Danae Moss
+#
+# This script runs indefinitely, receiving GPS coordinates through a queue from the position script
+# It then checks to see if the position is still within boundaries set in the configurations
+# If not, it sends a signal through serial to the cutter circuit to sever ties to the balloon
+#
+
 import ConfigParser
 import threading
 import serial
 
+# Obtains user-defined boundaries through config file
 Config = ConfigParser.ConfigParser()
 Config.read("./config.ini")
 MAX_ALTITUDE = Config.getfloat('PositionBoundaries', 'Altitude')
@@ -12,31 +22,29 @@ MIN_LONGITUDE = Config.getfloat('PositionBoundaries', 'MinLongitude')
 
 
 class Cutter(threading.Thread):
+    # Initiates an instance of itself as a thread, sets to running
     def __init__(self, cutter_queue):
         threading.Thread.__init__(self)
         self.ser = serial.Serial('/dev/ttyUSB0', 9600)
         self.cutter_queue = cutter_queue
         self.running = True
 
-
+    # Defines run sequence
     def run(self):
         while self.running:
             self.checkPosition()
 
+    # Obtains Latitude, Longitude, and altitude from position module
+    # Activates Cutter circuit if coordinates fall outside boundaries
     def checkPosition(self):
         out_of_bounds = False
         fix = self.cutter_queue.get()
-        if fix:
+        if fix:  # If value in queue is anything other than "None" Poison Pill
             altitude = fix["altitude"]
             latitude = fix["latitude"]
             longitude = abs(fix["longitude"])
-            # print 'CUTTER: Max Altitude is {}'.format(MAX_ALTITUDE)
-            # print 'CUTTER: Altitude = {}, type {}'.format(altitude, type(altitude))
-            # print 'CUTTER: Max Latitude is {}, Min Latitude is {}'.format(MAX_LATITUDE, MIN_LATITUDE)
-            # print 'CUTTER: Longitude = {}, type {}'.format(latitude, type(latitude))
-            # print 'CUTTER: Max Longitude is {}, Min Longitude is {}'.format(MAX_LONGITUDE, MIN_LONGITUDE)
-            # print 'CUTTER: Longitude = {}, type {}'.format(longitude, type(longitude))
 
+            # Check if coordinates fall outside boundaries
             if altitude < MAX_ALTITUDE:
                 if MIN_LATITUDE <= latitude <= MAX_LATITUDE:
                     if MIN_LONGITUDE <= longitude <= MAX_LONGITUDE:
@@ -57,11 +65,12 @@ class Cutter(threading.Thread):
             else:
                 print 'In bounds.'
 
-            self.cutter_queue.task_done()
-        else:
+            self.cutter_queue.task_done()  # Mark position item in queue as done
+        else:  # Poison pill detected
             self.running = False
             self.cutter_queue.task_done()
 
+    # Sends a hex signal of '1' to Cutter circuit to initiate cutting
     def cut(self):
         print 'Cutting!!!'
         command = '1'
